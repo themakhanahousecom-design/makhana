@@ -15,8 +15,9 @@ def main():
     parser.add_argument("--supervised-child", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--recovering", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--command", help="Run a typed command without starting the desktop UI")
+    parser.add_argument("--ui-smoke", action="store_true", help="Open and verify the desktop briefly without microphone or speech")
     args = parser.parse_args()
-    if args.supervise and (args.command is not None or args.supervised_child or args.recovering):
+    if args.supervise and (args.command is not None or args.supervised_child or args.recovering or args.ui_smoke):
         parser.error("--supervise cannot be combined with a command or internal child flags")
     if args.recovering and not args.supervised_child:
         parser.error("--recovering is an internal supervised-child option")
@@ -30,13 +31,13 @@ def main():
         result = engine.execute(args.command)
         print(json.dumps(asdict(result), ensure_ascii=False))
         return 0 if result.ok else 1
-    return desktop(settings, engine, folder, args.background, recovering=args.recovering)
+    return desktop(settings, engine, folder, args.background, recovering=args.recovering, ui_smoke=args.ui_smoke)
 
 
-def desktop(settings, engine, folder, background, recovering=False):
+def desktop(settings, engine, folder, background, recovering=False, ui_smoke=False):
     from PySide6.QtCore import QObject, Signal, QTimer, Qt, QLockFile
     from PySide6.QtGui import QAction, QColor, QPainter, QPen, QTextCursor
-    from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QTextEdit, QSystemTrayIcon, QMenu, QStyle, QDialog, QFormLayout, QCheckBox, QSpinBox, QDialogButtonBox, QMessageBox, QScrollArea, QListWidget, QListWidgetItem, QInputDialog, QFileDialog, QTableWidget, QTableWidgetItem, QTabWidget)
+    from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QLineEdit, QTextEdit, QSystemTrayIcon, QMenu, QStyle, QDialog, QFormLayout, QCheckBox, QSpinBox, QDialogButtonBox, QMessageBox, QScrollArea, QListWidget, QListWidgetItem, QInputDialog, QFileDialog, QTableWidget, QTableWidgetItem, QTabWidget, QComboBox)
     from .voice import VoiceService, Speaker
     from .windows import set_autostart
 
@@ -47,37 +48,15 @@ def desktop(settings, engine, folder, background, recovering=False):
         partial = Signal(str)
         result = Signal(object)
         voice_state = Signal(str)
-        speech_state = Signal(str)
-        speech_status = Signal(str)
+        speech_state = Signal(int, str)
+        speech_status = Signal(int, str)
         progress = Signal(str)
-        speech_word = Signal(int, int)
-
-    class CoreVisual(QWidget):
-        def __init__(self):
-            super().__init__()
-            self.setMinimumHeight(170)
-            self.phase = 0
-            self.activity = "idle"
-            self.timer = QTimer(self)
-            self.timer.timeout.connect(self.tick)
-            self.timer.start(50)
-
-        def tick(self):
-            if self.isVisible() and not settings.lightweight:
-                self.phase = (self.phase + 2) % 360
-                self.update()
-
-        def paintEvent(self, event):
-            p = QPainter(self)
-            p.setRenderHint(QPainter.Antialiasing)
-            cx, cy = self.width() // 2, self.height() // 2
-            p.translate(cx, cy)
-            for r in (55, 68, 78):
-                p.setPen(QPen(QColor("#39dfc4"), 2))
-                p.drawArc(-r, -r, r*2, r*2, int(self.phase * 16 + r), 260*16)
-            p.setPen(QColor("#f0d09a"))
-            p.drawText(-48, -8, 96, 24, Qt.AlignCenter, "SIDHU AI")
-            p.drawText(-65, 14, 130, 24, Qt.AlignCenter, self.activity.upper())
+        speech_word = Signal(int, int, int)
+        speech_viseme = Signal(int, int, int)
+        speech_text = Signal(int, str)
+        speech_sync = Signal(int, str)
+        input_level = Signal(int, float)
+        voice_catalog = Signal(object)
 
     class PlainLog(QTextEdit):
         def append(self, text):
@@ -94,53 +73,27 @@ def desktop(settings, engine, folder, background, recovering=False):
             from .screen_ui import ScreenWorkflow
             self.screen_flow = ScreenWorkflow(self, settings, engine, self.pool, self.events.result.emit, lambda message: self.log.append(message))
             self.listener_generation = 0
-            self.voice = VoiceService(settings, lambda text: self.events.voice_command.emit(0, text), self.events.status.emit, self.events.partial.emit, self.events.voice_state.emit)
-            self.speaker = Speaker(settings, self.voice.speaking, self.events.speech_status.emit, self.events.speech_state.emit, on_word=self.events.speech_word.emit)
-            self.setWindowTitle("SIDHU AI • Desktop Assistant")
-            self.resize(860, 760)
-            base = QWidget()
-            self.setCentralWidget(base)
-            layout = QVBoxLayout(base)
-            title = QLabel("SIDHU / AI     ·     PERSONAL COMMAND CENTER")
-            title.setStyleSheet("font-size:23px; color:#f0d09a; padding:15px")
-            layout.addWidget(title)
-            from .avatar import AvatarView
-            self.visual = AvatarView(CoreVisual, enabled=settings.avatar_enabled and not settings.lightweight)
-            self.events.speech_word.connect(self.visual.word)
-            layout.addWidget(self.visual)
-            self.status = QLabel("Microphone muted. Enable listening when ready.")
-            self.partial = QLabel("")
-            layout.addWidget(self.status)
-            self.speech_status = QLabel("Speech idle")
-            layout.addWidget(self.speech_status)
-            self.task_status = QLabel("Task engine idle")
-            layout.addWidget(self.task_status)
-            layout.addWidget(self.partial)
-            self.stats = QLabel()
-            layout.addWidget(self.stats)
-            self.log = PlainLog()
-            self.log.setReadOnly(True)
-            self.log.setAcceptRichText(False)
-            layout.addWidget(self.log)
-            self.entry = QLineEdit()
-            self.entry.setPlaceholderText("Try diagnostics, open Chrome, latest PDF, help…")
-            self.entry.returnPressed.connect(self.submit)
-            layout.addWidget(self.entry)
-            row = QHBoxLayout()
-            for index, (label, handler) in enumerate((("Run command", self.submit), ("Enable / mute microphone", self.toggle_voice), ("Stop speech / cancel task", self.cancel), ("Settings", self.configure), ("Workflows", self.configure_workflows), ("Memory", self.manage_memory), ("Productivity", self.manage_productivity), ("Activity", self.manage_activity), ("Screen", self.screen_flow.begin), ("Capabilities", self.capabilities))):
-                if index in (3, 6, 9):
-                    layout.addLayout(row)
-                    row = QHBoxLayout()
-                button = QPushButton(label)
-                button.clicked.connect(handler)
-                row.addWidget(button)
-            layout.addLayout(row)
+            self.voice = VoiceService(settings, lambda text: self.events.voice_command.emit(0, text), self.events.status.emit, self.events.partial.emit, self.events.voice_state.emit, on_level=lambda value: self.events.input_level.emit(0, value))
+            self.speaker = Speaker(settings, self.voice.speaking,
+                lambda text: self.events.speech_status.emit(self.speaker.utterance_id, text),
+                lambda state: self.events.speech_state.emit(self.speaker.utterance_id, state),
+                on_word=lambda start, length: self.events.speech_word.emit(self.speaker.utterance_id, start, length),
+                on_viseme=lambda pose, duration: self.events.speech_viseme.emit(self.speaker.utterance_id, pose, duration),
+                on_text=lambda text: self.events.speech_text.emit(self.speaker.utterance_id, text),
+                on_sync=lambda mode: self.events.speech_sync.emit(self.speaker.utterance_id, mode))
+            from .dashboard import build_dashboard
+            build_dashboard(self, settings, PlainLog)
+            self.events.speech_word.connect(self.speech_word)
+            self.events.speech_viseme.connect(self.speech_viseme)
+            self.events.speech_text.connect(self.speech_text)
+            self.events.speech_sync.connect(self.speech_sync)
+            self.events.input_level.connect(self.input_level)
             self.events.command.connect(self.dispatch)
             self.events.voice_command.connect(self.dispatch_voice)
-            self.events.status.connect(self.status.setText)
-            self.events.speech_status.connect(self.speech_status.setText)
-            self.events.voice_state.connect(lambda state: self.update_activity())
-            self.events.speech_state.connect(lambda state: self.update_activity())
+            self.events.status.connect(self.voice_status_message)
+            self.events.speech_status.connect(self.speech_message)
+            self.events.voice_state.connect(self.voice_changed)
+            self.events.speech_state.connect(self.speech_changed)
             self.events.partial.connect(self.partial.setText)
             self.events.result.connect(self.finished)
             self.events.progress.connect(self.task_status.setText)
@@ -165,12 +118,19 @@ def desktop(settings, engine, folder, background, recovering=False):
             self.timer.timeout.connect(self.refresh_stats)
             self.timer.start(2000)
             self.refresh_stats()
-            self.log.append("SIDHU AI MVP. Type help for commands. Original procedural 3D avatar is optional in Settings. Word-driven mouth animation is not phoneme-level lip sync. Listening is paused during TTS to avoid self-triggering. Stop speech / cancel task interrupts audio; spoken barge-in is not yet supported.")
+            self.log.append("SIDHU AI. Type help for available commands. Microphone starts muted. Speech uses installed voices; Windows SAPI visemes are used when supplied by the voice, with approximate word animation otherwise. Listening pauses during speech. Stop interrupts speech and requests task cancellation.")
+            self.refresh_model_status()
             if background and not recovering:
                 self._start_voice()
             if recovering:
                 self.status.setText("Recovered after an abnormal exit. Microphone muted; enable listening when ready.")
                 self.log.append("Watchdog recovery: microphone remains muted. Review supervisor status for saved restart observations.")
+            if not ui_smoke:
+                available = self.screen().availableGeometry()
+                width = max(1120, min(1512, available.width() - 24))
+                height = max(680, min(960, available.height() - 40))
+                self.apply_compact_view(height < 850 or width < 1380)
+                self.resize(width, height)
             if not background or not QSystemTrayIcon.isSystemTrayAvailable():
                 self.show()
 
@@ -186,6 +146,88 @@ def desktop(settings, engine, folder, background, recovering=False):
         def update_activity(self):
             self.visual.activity = "speaking" if self.voice.speaking.is_set() else "processing" if self.busy else self.voice.state
             self.visual.update()
+
+        def voice_changed(self, state):
+            # Signals can wait in Qt's queue across a rapid mute/re-enable.
+            # Display the service's current observation when delivery occurs.
+            state = self.voice.state
+            headings = {"muted": "Microphone muted", "loading": "Preparing listener…", "listening": "Listening…", "recovering": "Reconnecting…", "error": "Voice unavailable"}
+            self.voice_heading.setText(headings.get(state, state.capitalize()))
+            active = state in {"loading", "listening", "recovering"}
+            self.mic_button.setText("Mute microphone" if active else "Enable listening")
+            self.privacy_status.setText("MIC ON · LOCAL RECOGNITION" if state == "listening" else "MIC STARTING" if state in {"loading", "recovering"} else "MIC OFF · LOCAL TOOLS")
+            self.waveform.set_activity(state)
+            if state != "listening":
+                self.waveform.set_level(0)
+            self.update_activity()
+
+        def voice_status_message(self, message):
+            current = self.voice.status_message
+            self.status.setText(current)
+            self.voice_heading.setToolTip(current)
+            self.mic_button.setToolTip(current)
+
+        def speech_changed(self, utterance, state):
+            if utterance != self.speaker.utterance_id:
+                return
+            self.update_activity()
+            if state == "speaking":
+                self.voice_heading.setText("Speaking…")
+                self.waveform.set_activity("speaking")
+                self.waveform.set_level(0)
+            else:
+                self.voice_changed(self.voice.state)
+
+        def input_level(self, generation, value):
+            if generation == self.listener_generation and self.voice.state == "listening" and not self.voice.speaking.is_set():
+                self.waveform.set_level(value)
+
+        def speech_text(self, utterance, text):
+            if utterance == self.speaker.utterance_id and self.voice.speaking.is_set():
+                self.bubble.set_message(text[:480], "SIDHU AI · SPEAKING")
+
+        def speech_sync(self, utterance, mode):
+            if utterance == self.speaker.utterance_id and self.voice.speaking.is_set():
+                self.sync_status.setText("Lip sync · live SAPI visemes" if mode == "viseme" else "Lip sync · approximate word events")
+
+        def speech_word(self, utterance, start, length):
+            if utterance == self.speaker.utterance_id and self.voice.speaking.is_set():
+                self.visual.word(start, length)
+
+        def speech_viseme(self, utterance, pose, duration):
+            if utterance == self.speaker.utterance_id and self.voice.speaking.is_set():
+                self.visual.viseme(pose, duration)
+
+        def speech_message(self, utterance, message):
+            if utterance == self.speaker.utterance_id:
+                self.speech_status.setText(message)
+                self.speech_status.setToolTip(message)
+
+        def refresh_model_status(self):
+            from urllib.parse import urlparse
+            configured = bool(settings.ai_model.strip())
+            hostname = urlparse(settings.ai_base_url).hostname or "provider"
+            self.model_status.setText(f"AI · {settings.ai_model[:32]} / {hostname[:32]}" if configured else "AI · Model not configured")
+            self.model_status.setToolTip("Provider configuration only. Connection is checked when a request is made.")
+
+        def search_web(self):
+            from urllib.parse import urlencode
+            query, accepted = QInputDialog.getText(self, "Search on Google", "Search terms")
+            if accepted and query.strip():
+                self.dispatch("open https://www.google.com/search?" + urlencode({"q": query.strip()}))
+
+        def ask_ai(self):
+            question, accepted = QInputDialog.getMultiLineText(self, "Chat with AI", "Your question (sent to the configured provider)")
+            if accepted and question.strip():
+                self.dispatch("ask " + question.strip())
+
+        def write_note(self):
+            if not settings.memory_enabled:
+                QMessageBox.information(self, "Memory disabled", "Enable explicit note memory in Settings before saving a note.")
+                return
+            text, accepted = QInputDialog.getMultiLineText(self, "Write a note", "Save this note locally")
+            if accepted and text.strip():
+                self.dispatch("remember " + text.strip())
 
         def refresh_stats(self):
             import psutil
@@ -203,6 +245,8 @@ def desktop(settings, engine, folder, background, recovering=False):
             self.dispatch(text)
 
         def dispatch(self, text):
+            if self.exiting:
+                return
             if text.strip().casefold() in {"capture screen", "analyze screen"}:
                 self.screen_flow.begin()
                 return
@@ -217,12 +261,14 @@ def desktop(settings, engine, folder, background, recovering=False):
             self.update_activity()
             self.log.append("You: " + text)
             self.task_status.setText("Processing command…")
+            self.bubble.set_message("Working on your request…", "SIDHU AI · THINKING")
             self.pool.submit(lambda: self.events.result.emit(engine.execute(text, reset_cancellation=False)))
 
         def finished(self, result):
             self.busy = False
             self.update_activity()
             self.log.append(f"[{result.agent}] {'OK' if result.ok else 'UNAVAILABLE / ERROR'}: {result.message}")
+            self.bubble.set_message(result.message[:480], "SIDHU AI · " + ("RESPONSE" if result.ok else "UNAVAILABLE"))
             outcome = "Task completed" if result.ok else "Task failed or unavailable"
             self.task_status.setText(f"{outcome} • {result.elapsed_ms:.2f} ms (execution only)")
             if result.history_warning:
@@ -234,12 +280,14 @@ def desktop(settings, engine, folder, background, recovering=False):
         def cancel(self):
             engine.cancelled.set()
             self.speaker.stop()
+            self.bubble.set_message("Speech stopped. Task cancellation requested.", "SIDHU AI · STOPPED")
             self.log.append("Speech stopped and task cancellation requested. Network requests finish within their timeout; dispatched app launches cannot be undone.")
 
         def _start_voice(self):
             self.listener_generation += 1
             generation = self.listener_generation
             self.voice.on_command = lambda text: self.events.voice_command.emit(generation, text)
+            self.voice.on_level = lambda value: self.events.input_level.emit(generation, value)
             self.voice.start()
 
         def _stop_voice(self):
@@ -265,10 +313,44 @@ def desktop(settings, engine, folder, background, recovering=False):
             scroll.setWidget(content)
             outer.addWidget(scroll)
             edits = {}
-            for name, label in (("model_path", "Extracted Vosk model folder"), ("voice_id", "Installed TTS voice ID (blank = system default)"), ("ai_base_url", "OpenAI-compatible base URL"), ("ai_model", "Model name"), ("ai_key_env", "API key environment variable name"), ("browser_executable", "Chromium executable (blank = Playwright installed browser)")):
+            for name, label in (("model_path", "Extracted Vosk model folder"), ("voice_id", "Installed TTS voice ID (blank = automatic preference)"), ("ai_base_url", "OpenAI-compatible base URL"), ("ai_model", "Model name"), ("ai_key_env", "API key environment variable name"), ("browser_executable", "Chromium executable (blank = Playwright installed browser)")):
                 edit = QLineEdit(getattr(settings, name))
                 edits[name] = edit
                 form.addRow(label, edit)
+            voice_choices = QComboBox()
+            voice_choices.addItem("Auto: prefer installed Punjabi / Indian male voice", "")
+            voice_choices.activated.connect(lambda index: edits["voice_id"].setText(voice_choices.itemData(index)))
+            form.addRow("Installed speech voices", voice_choices)
+            discover = QPushButton("Find installed voices")
+            form.addRow(discover)
+            voice_notice = QLabel("Voice quality and accent depend on installed voices. No artist voice is bundled.")
+            voice_notice.setWordWrap(True)
+            form.addRow(voice_notice)
+            def catalog_loaded(result):
+                discover.setEnabled(True)
+                if isinstance(result, str):
+                    voice_notice.setText("Voice discovery unavailable: " + result)
+                    return
+                voice_choices.clear()
+                voice_choices.addItem("Auto: prefer installed Punjabi / Indian male voice", "")
+                for voice in result:
+                    voice_choices.addItem(f"{voice.name} · {', '.join(voice.languages)} · {voice.gender or 'unspecified'}", voice.id)
+                    if voice.id == edits["voice_id"].text():
+                        voice_choices.setCurrentIndex(voice_choices.count() - 1)
+                voice_notice.setText(f"{len(result)} installed voices found. Selection takes effect after saving.")
+            def discover_voices():
+                discover.setEnabled(False)
+                voice_notice.setText("Querying the installed speech driver…")
+                def query():
+                    try:
+                        from .speech import discover_installed_voices
+                        result = discover_installed_voices()
+                    except Exception as exc:
+                        result = str(exc)
+                    self.events.voice_catalog.emit(result)
+                self.pool.submit(query)
+            discover.clicked.connect(discover_voices)
+            self.events.voice_catalog.connect(catalog_loaded)
             domains = QLineEdit(",".join(settings.browser_domains))
             form.addRow("Browser approved hostnames (comma separated)", domains)
             folders = QLineEdit(";".join(settings.approved_folders))
@@ -312,7 +394,9 @@ def desktop(settings, engine, folder, background, recovering=False):
             buttons.accepted.connect(dialog.accept)
             buttons.rejected.connect(dialog.reject)
             outer.addWidget(buttons)
-            if dialog.exec() == QDialog.Accepted:
+            accepted = dialog.exec() == QDialog.Accepted
+            self.events.voice_catalog.disconnect(catalog_loaded)
+            if accepted:
                 desired = checks["autostart"].isChecked()
                 if desired or desired != settings.autostart:
                     try:
@@ -337,6 +421,11 @@ def desktop(settings, engine, folder, background, recovering=False):
                 settings.followup_seconds = follow.value()
                 settings.speech_rate = speed.value()
                 settings.save(folder / "settings.json")
+                self.visual.set_performance(settings.lightweight)
+                self.waveform.set_performance(settings.lightweight)
+                self.backdrop.set_performance(settings.lightweight)
+                self.bubble.set_performance(settings.lightweight)
+                self.refresh_model_status()
                 self.status.setText("Settings saved. Microphone muted; enable to use the new configuration.")
 
         def manage_activity(self):
@@ -563,7 +652,7 @@ def desktop(settings, engine, folder, background, recovering=False):
             dialog.exec()
 
         def capabilities(self):
-            QMessageBox.information(self, "Actual capability status", "IMPLEMENTED: deterministic command routing, diagnostics, approved-folder search, opt-in notes, settings, bounded saved workflows, text previews/content search, recent files, duplicate detection, note management, local tasks and reminders, opt-in activity metadata, execution timing, hardware/process reports, local document/CSV tools, optional transient AI context, optional bounded watchdog, native window controls, opt-in one-shot screen preview and optional vision input.\nWINDOWS TEST REQUIRED: app launch, volume, tray, autostart, packaged app, watchdog restarts, native window actions, physical screen capture, SAPI speech.\nREQUIRES CONFIGURATION: Vosk language model and microphone; AI text/vision provider/model; installed multilingual TTS voices; optional Playwright/Chromium and approved hostnames for inspection.\nPARTIAL: local wake phrase via full speech recognition, cancellation, audio recovery.\nNOT IMPLEMENTED: realistic licensed character/phoneme lip sync, voice barge-in, browser form/click workflows, continuous/automatic screen observation, coding execution, calendar integrations, advanced multi-agent planning. No licensed voice or likeness is bundled.")
+            QMessageBox.information(self, "Actual capability status", "IMPLEMENTED: cinematic desktop, original animated portrait, articulated procedural 3D scene, speech-event mouth animation, deterministic command routing, diagnostics, approved-folder search, opt-in notes, settings, bounded saved workflows, text previews/content search, recent files, duplicate detection, note management, local tasks and reminders, opt-in activity metadata, execution timing, hardware/process reports, local document/CSV tools, optional transient AI context, optional bounded watchdog, native window controls, opt-in one-shot screen preview and optional vision input.\nWINDOWS TEST REQUIRED: app launch, volume, tray, autostart, packaged app, watchdog restarts, native window actions, physical screen capture, SAPI speech and audible viseme synchronization, native 3D appearance.\nREQUIRES CONFIGURATION: Vosk language model and microphone; AI text/vision provider/model; installed multilingual TTS voices; optional Playwright/Chromium and approved hostnames for inspection.\nPARTIAL: local wake phrase via full speech recognition, cancellation, audio recovery.\nNOT IMPLEMENTED: photorealistic facial rig or licensed artist assets, voice barge-in, browser form/click workflows, continuous/automatic screen observation, coding execution, calendar integrations, advanced multi-agent planning. No licensed voice or likeness is bundled.")
 
         def closeEvent(self, event):
             if self.exiting:
@@ -574,6 +663,13 @@ def desktop(settings, engine, folder, background, recovering=False):
             else:
                 self.quit()
                 event.accept()
+
+        def resizeEvent(self, event):
+            if hasattr(self, "apply_compact_view"):
+                compact = event.size().height() < 850 or event.size().width() < 1380
+                if compact != getattr(self, "_compact", None):
+                    self.apply_compact_view(compact)
+            super().resizeEvent(event)
 
         def quit(self):
             self.exiting = True
@@ -587,6 +683,10 @@ def desktop(settings, engine, folder, background, recovering=False):
             self.tray.hide()
             QApplication.quit()
 
+    if ui_smoke:
+        background = False
+        settings.speech_enabled = False
+    QApplication.setAttribute(Qt.AA_ShareOpenGLContexts)
     app = QApplication(sys.argv)
     instance_lock = QLockFile(str(folder / "desktop.lock"))
     if not instance_lock.tryLock(100):
@@ -594,9 +694,31 @@ def desktop(settings, engine, folder, background, recovering=False):
         from .supervisor import ALREADY_RUNNING
         return ALREADY_RUNNING
     app.setQuitOnLastWindowClosed(False)
-    app.setStyleSheet("QWidget {background:#0b1420; color:#dbe9ed; font-family:Segoe UI; font-size:13px} QLineEdit,QTextEdit {background:#111f2d; border:1px solid #294154; border-radius:8px; padding:10px} QPushButton {background:#173a42; border:1px solid #2f766f; border-radius:6px; padding:10px} QPushButton:hover {background:#245861} QLabel {padding:4px}")
+    from .interface import THEME
+    app.setStyleSheet(THEME)
     window = Window()
-    return app.exec()
+    smoke_failures = []
+    if ui_smoke:
+        def finish_smoke():
+            import os
+            from pathlib import Path
+            try:
+                preview = os.environ.get("SIDHU_UI_PREVIEW", "")
+                if preview:
+                    target = Path(preview)
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    if not window.grab().save(str(target)):
+                        smoke_failures.append("Could not save desktop preview")
+                if window.voice.thread is not None or window.voice.speaking.is_set():
+                    smoke_failures.append("UI smoke unexpectedly started audio")
+            except Exception as exc:
+                smoke_failures.append(str(exc))
+            finally:
+                print("SIDHU_UI_SMOKE_FAILED" if smoke_failures else "SIDHU_UI_SMOKE_OK", flush=True)
+                window.quit()
+        QTimer.singleShot(1400, finish_smoke)
+    code = app.exec()
+    return 2 if smoke_failures else code
 
 
 if __name__ == "__main__":

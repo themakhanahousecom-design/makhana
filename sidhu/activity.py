@@ -46,5 +46,7 @@ def operation_label(command):
     known = {'capture screen', 'analyze screen', 'supervisor status', 'windows', 'ai models', 'new conversation', 'history', 'hardware', 'processes', 'diagnostics', 'battery', 'workflows', 'tasks', 'reminders', 'memories', 'recent files', 'duplicates', 'latest pdf', 'help', 'commands', 'cancel', 'stop'}
     if value in known:
         return value
+    if value in {"time", "what time is it", "tell me the time"}:
+        return "time"
     # No inferred free-form operation text is ever stored.
     return 'other command'

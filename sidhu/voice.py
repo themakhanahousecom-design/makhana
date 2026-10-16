@@ -1,8 +1,11 @@
 """Audio stays in memory. Vosk model loading happens only after user activation."""
 import json
+import math
 import multiprocessing
 import queue
 import re
+import struct
+import sys
 import threading
 import time
 from pathlib import Path
@@ -27,11 +30,13 @@ class WakeGate:
 
 
 class VoiceService:
-    def __init__(self, settings, on_command, on_status, on_partial, on_state=lambda state: None):
+    def __init__(self, settings, on_command, on_status, on_partial, on_state=lambda state: None, on_level=lambda level: None):
         self.settings = settings
         self.on_command, self.on_status, self.on_partial = on_command, on_status, on_partial
         self.on_state = on_state
+        self.on_level = on_level
         self.state = "muted"
+        self.status_message = "Microphone muted. Enable listening when ready."
         self.stop_event = threading.Event()
         self.thread = None
         self.speaking = threading.Event()
@@ -40,6 +45,7 @@ class VoiceService:
         if self.stop_event.is_set() and state != "muted":
             return
         self.state = state
+        self.status_message = message
         self.on_state(state)
         self.on_status(message)
 
@@ -56,6 +62,7 @@ class VoiceService:
         if self.thread and self.thread is not threading.current_thread():
             self.thread.join()  # Stream is closed before mute is acknowledged.
         self._status("muted", "Microphone muted; audio capture stopped")
+        self.on_level(0.0)
 
     def _run(self):
         try:
@@ -79,11 +86,16 @@ class VoiceService:
                         pass
                 try:
                     recognizer = KaldiRecognizer(model, 16000)
+                    level_at = 0.0
                     with sd.RawInputStream(samplerate=16000, blocksize=4000, device=self.settings.microphone, dtype="int16", channels=1, callback=callback) as stream:
                         self._status("listening", "Listening locally — say Hey Sidhu")
                         while not self.stop_event.is_set():
                             if self.speaking.is_set():
                                 recognizer.Reset()
+                                now = time.monotonic()
+                                if now - level_at >= 1 / 15:
+                                    self.on_level(0.0)
+                                    level_at = now
                                 while not audio.empty():
                                     try:
                                         audio.get_nowait()
@@ -100,6 +112,13 @@ class VoiceService:
                             if self.speaking.is_set():
                                 recognizer.Reset()
                                 continue
+                            # Actual captured mono int16 RMS, never transcript-derived.
+                            # Work stays off the real-time device callback and levels
+                            # are ephemeral; at most 15 updates per second reach UI.
+                            now = time.monotonic()
+                            if not self.stop_event.is_set() and now - level_at >= 1 / 15:
+                                self.on_level(pcm16_level(chunk))
+                                level_at = now
                             if recognizer.AcceptWaveform(chunk):
                                 text = json.loads(recognizer.Result()).get("text", "")
                                 # Recognition can finish after mute or speech output began.
@@ -125,19 +144,37 @@ class VoiceService:
                         return
         except Exception as exc:
             self._status("error", f"Voice unavailable: {exc}")
+        finally:
+            self.on_level(0.0)
+
+
+def pcm16_level(data):
+    """Normalized RMS of a captured little-endian int16 block, without retaining it."""
+    samples = len(data) // 2
+    if not samples:
+        return 0.0
+    energy = sum(value * value for (value,) in struct.iter_unpack("<h", memoryview(data)[:samples * 2]))
+    return min(1.0, math.sqrt(energy / samples) / 32768)
 
 
 def _speak_process(text, rate, voice_id, connection):
     """Isolated driver: cancellation can stop even a blocked SAPI backend."""
     try:
-        import pyttsx3
-        engine = pyttsx3.init()
-        engine.setProperty("rate", rate)
-        if voice_id:
-            engine.setProperty("voice", voice_id)
-        engine.connect("started-word", lambda name, location, length: connection.send(("word", [location, length])))
-        engine.say(text)
-        engine.runAndWait()
+        if sys.platform == "win32":
+            from .speech import speak_windows
+            speak_windows(text, rate, voice_id, connection.send)
+        else:
+            import pyttsx3
+            from .speech import preferred_voice, voice_from_driver
+            engine = pyttsx3.init()
+            engine.setProperty("rate", rate)
+            chosen = preferred_voice([voice_from_driver(voice) for voice in engine.getProperty("voices")], voice_id)
+            if chosen:
+                engine.setProperty("voice", chosen.id)
+            connection.send(("sync", "word"))
+            engine.connect("started-word", lambda name, location, length: connection.send(("word", [location, length])))
+            engine.say(text)
+            engine.runAndWait()
         connection.send(("done", ""))
     except Exception as exc:
         connection.send(("error", str(exc)))
@@ -146,16 +183,21 @@ def _speak_process(text, rate, voice_id, connection):
 
 
 class Speaker:
-    def __init__(self, settings, speaking, on_status, on_state=lambda state: None, context=None, target=None, on_word=lambda location, length: None):
+    def __init__(self, settings, speaking, on_status, on_state=lambda state: None, context=None, target=None, on_word=lambda location, length: None, on_viseme=lambda viseme, duration: None, on_text=lambda text: None, on_sync=lambda mode: None):
         self.settings, self.speaking, self.on_status = settings, speaking, on_status
         self.on_state = on_state
         self.on_word = on_word
+        self.on_viseme, self.on_text, self.on_sync = on_viseme, on_text, on_sync
         self.context = context or multiprocessing.get_context("spawn")
         self.target = target or _speak_process
         self.messages = queue.Queue(maxsize=4)
         self.closed = threading.Event()
         self.lock = threading.RLock()
         self.generation = 0
+        # GUI signal queues may outlive cancellation or an entire utterance.
+        # Callback adapters can attach this token while holding our lock, then
+        # reject delivery when the token no longer matches the current speech.
+        self.utterance_id = 0
         self.process = None
         self.thread = threading.Thread(target=self._run, daemon=True, name="sidhu-speaker")
         self.thread.start()
@@ -181,6 +223,7 @@ class Speaker:
     def stop(self):
         with self.lock:
             self.generation += 1
+            self.utterance_id += 1
             while True:
                 try:
                     self.messages.get_nowait()
@@ -208,7 +251,9 @@ class Speaker:
                     # An unstarted process cannot be joined during cleanup.
                     self.process = process
                     send.close()
+                    self.utterance_id += 1
                     self.speaking.set()
+                    self.on_text(text)
                     self.on_state("speaking")
                     self.on_status("Speech output active (microphone commands suppressed).")
                 deadline = time.monotonic() + 120
@@ -227,6 +272,16 @@ class Speaker:
                                 break
                             if status == "word":
                                 self.on_word(*message)
+                                continue
+                            if status == "viseme":
+                                self.on_viseme(*message)
+                                continue
+                            if status == "sync":
+                                self.on_sync(message)
+                                if message == "word":
+                                    self.on_status("Speech mouth animation follows actual word events; waiting for optional visemes from the installed voice.")
+                                elif message == "viseme":
+                                    self.on_status("Speech mouth animation follows actual Windows SAPI visemes.")
                                 continue
                             if status == "error":
                                 self.on_status("Speech unavailable: " + message)

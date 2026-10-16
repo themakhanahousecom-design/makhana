@@ -1,4 +1,4 @@
-name: Windows MVP build
+name: Windows desktop build
 on:
   workflow_dispatch:
   push:
@@ -25,6 +25,17 @@ jobs:
           $process = Start-Process -FilePath '.\dist\SidhuAI\SidhuAI.exe' -ArgumentList '--command','diagnostics' -PassThru
           if (-not $process.WaitForExit(30000)) { $process.Kill(); throw 'Packaged diagnostics timed out' }
           if ($process.ExitCode -ne 0) { throw 'Packaged diagnostics failed' }
+      - name: Smoke-test packaged cinematic desktop without audio
+        shell: powershell
+        run: |
+          $env:SIDHU_DATA_DIR = Join-Path $env:RUNNER_TEMP 'sidhu-packaged-ui-smoke'
+          $env:QT_QPA_PLATFORM = 'offscreen'
+          $env:QT_QUICK_BACKEND = 'software'
+          $env:SIDHU_UI_PREVIEW = Join-Path $env:RUNNER_TEMP 'sidhu-interface-preview.png'
+          $process = Start-Process -FilePath '.\dist\SidhuAI\SidhuAI.exe' -ArgumentList '--ui-smoke' -PassThru
+          if (-not $process.WaitForExit(30000)) { $process.Kill(); throw 'Packaged desktop smoke test timed out' }
+          if ($process.ExitCode -ne 0) { throw 'Packaged desktop smoke test failed' }
+          if (-not (Test-Path $env:SIDHU_UI_PREVIEW)) { throw 'Packaged desktop did not produce its preview' }
       - name: Build per-user installer
         shell: powershell
         run: |
@@ -38,4 +49,5 @@ jobs:
           path: |
             dist/SidhuAI/
             dist/installer/*.exe
+            ${{ runner.temp }}/sidhu-interface-preview.png
           if-no-files-found: error

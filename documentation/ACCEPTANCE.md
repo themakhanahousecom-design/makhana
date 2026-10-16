@@ -20,8 +20,8 @@ This is an MVP, not completion of the master development specification. Status *
 | 14 | Interrupt speech | PARTIALLY WORKING: dashboard interruption terminates isolated TTS worker; tests cover blocked-worker termination, queue clearing and subsequent output. Spoken barge-in not implemented; Windows audio validation pending |
 | 15 | Task cancellation | PARTIALLY WORKING: cooperative file cancellation / AI response discard; no rollback; dashboard TTS interruption implemented |
 | 16 | Actual execution results | WORKING for tested core; app/browser dispatch explicitly distinguished from completion |
-| 17 | Voice/avatar lip sync | PARTIALLY WORKING: system TTS word events drive mouth pulses. Test worker event delivery and QML bindings verified; audible synchronization untested. Phoneme/viseme lip sync is NOT IMPLEMENTED |
-| 18 | Real avatar state animations | PARTIALLY WORKING: original procedural 3D scene, lifecycle binding, blinking and idle head movement implemented. QML instantiation and software fallback tested; real GPU rendering unverified |
+| 17 | Voice/avatar lip sync | PARTIALLY WORKING: native Windows SAPI visemes select live mouth poses; other voices use approximate word events. Event protocol, cancellation and QML bindings tested; actual Windows audible synchronization pending |
+| 18 | Real avatar state animations | PARTIALLY WORKING: articulated original procedural 3D scene with breathing, blinking, head/arm motion and lifecycle states; separate animated software portrait. Real app preview works; native GPU appearance and realism pending |
 | 19 | Actual system information | WORKING: live psutil readings and functional diagnostics |
 | 20 | Dashboard closes, listening persists | PARTIALLY WORKING: tray lifecycle implemented; Windows test pending |
 | 21 | Mute stops listening | PARTIALLY WORKING: stop event and stream closure implemented; physical microphone test pending |
@@ -60,9 +60,9 @@ This is an MVP, not completion of the master development specification. Status *
 - `app.py`: Qt UI, tray, bounded single-task worker, nonpersistent transcript, settings.
 - `config.py` / `memory.py`: local JSON settings and explicit opt-in SQLite notes.
 
-Next phases require real Windows integration testing, a dedicated trained/verified wake detector, stronger multilingual recognition, spoken barge-in, asset licensing and a compatible 3D/lip-sync pipeline, then browser form/click workflows, screen tools, scheduling and a bounded planner. No fake agent activity, fabricated tool outcomes, embedded credentials or licensed assets are included.
+Next phases require real Windows integration testing, a dedicated trained/verified wake detector, stronger multilingual recognition, spoken barge-in, licensed assets and a production facial rig, then browser form/click workflows, screen tools, scheduling and a bounded planner. No fake agent activity, fabricated tool outcomes, embedded credentials or licensed assets are included.
 
-The core visual now labels actual muted/loading/listening/recovering/error/processing/speaking state. That core is a fallback rather than the optional procedural 3D character. Microphone, speech and task status are separate so finishing a command does not erase an audio error. Windows build automation is committed in `.github/workflows/windows.yml`; its CI outcome has not been verified.
+The cinematic dashboard labels actual muted/loading/listening/recovering/error/processing/speaking state. The former ring core has been replaced by an original animated portrait fallback; the native character is a separate articulated Qt Quick 3D scene. Microphone, speech and task status are separate so finishing a command does not erase an audio error. Windows build automation is committed in `.github/workflows/windows.yml`; its CI outcome has not been verified.
 
 ## Browser and workflow continuation
 
@@ -80,9 +80,9 @@ WORKING with real SQLite and an offscreen Qt editor: note search, editing, confi
 
 ## Original avatar continuation
 
-An optional Qt Quick 3D original stylized Punjabi character is supplied as packaged QML. It uses procedural primitive geometry, not licensed likeness assets or a realistic sculpt. Mouth movement is triggered by actual system TTS word-start callbacks when supported, not generated timing or phoneme analysis. Test speech workers simulate those callbacks to validate delivery; no real audible TTS/avatar synchronization was tested here.
+The cinematic redesign supplies original procedural 3D geometry and a separate generated cinematic portrait used by the animated software mode. Both receive actual lifecycle state and mouth events. The native model has articulated arms/hands, headphones, layered black turban and neon jacket trim; it remains a stylized model. The portrait has affine breathing/tilt, blink and mouth overlays; its pictured hand is not independently rigged. No celebrity likeness or voice is bundled.
 
-A real render attempt on this cloud host produced only an empty scene because Qt chose a software scene graph unsupported by View3D. The new renderer check now uses the lightweight core instead. Actual QML scene instantiation and software fallback both pass tests. GPU appearance and laptop resource usage remain pending. Enable the avatar in Settings and restart on Windows, test speaking/stopping, hide to tray and inspect rendering/resource behavior before accepting requirements #17/#18/#30.
+The native speech worker relays real SAPI viseme IDs when the installed voice emits them, with word callbacks as an approximate fallback. Protocol tests simulate the driver and do not establish actual audible synchronization. The offscreen app renders the portrait, because Qt Quick 3D is unavailable on this software host. QML component creation/state/viseme bindings are tested; native GPU rendering, physical speech timing and Acer resource use remain pending. See [INTERFACE.md](INTERFACE.md) for launch and manual acceptance instructions and [ASSETS.md](ASSETS.md) for provenance.
 
 ## Local productivity continuation
 

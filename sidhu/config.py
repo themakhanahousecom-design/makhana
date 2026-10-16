@@ -33,7 +33,7 @@ class Settings:
     ai_context_enabled: bool = False
     ai_key_env: str = "SIDHU_API_KEY"
     lightweight: bool = False
-    avatar_enabled: bool = False
+    avatar_enabled: bool = True
     browser_enabled: bool = False
     browser_domains: list[str] = field(default_factory=list)
     browser_executable: str = ""

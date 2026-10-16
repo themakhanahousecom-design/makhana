@@ -1,6 +1,10 @@
 # SIDHU AI
 
-A real Windows assistant MVP built with Python and PySide6. This repository is the first functional slice of the supplied master specification, **not the complete seven-phase product**. No celebrity voice, likeness or pretrained custom wake-word model is bundled. An optional original procedural 3D character is included; it is not a realistic licensed likeness.
+A Windows assistant built with Python and PySide6, now with a cinematic neon-blue workstation interface, original animated Punjabi character, glass panels and controls connected to the existing command engine. The native Qt Quick 3D character and software portrait are distinct renderers. No celebrity likeness, cloned voice or pretrained custom wake-word model is bundled. The broader master specification remains partly implemented.
+
+See [interface, preview and Windows launch instructions](documentation/INTERFACE.md). Fresh installs enable native 3D when available; saved settings are preserved. Software-only systems display the animated original portrait. The dashboard starts muted and labels its actual microphone and rendering state.
+
+![Running SIDHU AI desktop, using the animated software portrait on the cloud host](documentation/previews/cinematic-desktop.png)
 
 ## Windows 10/11 quick start
 
@@ -24,6 +28,7 @@ Windows Settings → Privacy → Microphone must permit desktop application acce
 - `open Edge`, `open Explorer`, `open Notepad` — only enabled fixed applications, no shell commands.
 - `open https://example.com` — dispatches to the default Windows browser; does not verify the loaded page.
 - `diagnostics`, `performance check`, `battery` — actual psutil readings; no invented sensors or diagnoses.
+- `time`, `tell me the time` — the system's actual local time, date and timezone.
 - `volume 50` — Windows master endpoint volume, with readback.
 - `latest PDF`, `find report` — returns matching filenames inside explicitly approved folders, newest first. Search never opens or executes a file and caps traversal at 20,000 file/directory entries.
 - `remember <note>`, `memories` — explicit local SQLite notes, only when memory is enabled. Delete notes using Settings with confirmation.
@@ -36,7 +41,7 @@ The GUI rejects additional tasks while a task is active. Specialization is curre
 
 Closing the dashboard hides it to the tray on a system with tray support. It does not exit or mute the listener. The tray provides Open, Enable/mute microphone and Exit. Exit shuts down capture. Without tray support, closing exits. Enable **Start in tray at Windows sign-in** in Settings to register a per-user Run entry using `--supervise --background`; it launches without a developer terminal. Startup listening is attempted only at sign-in; missing models/devices report unavailable. Disable startup in Settings to remove the Run entry. The installer removes that entry on uninstall. Development startup uses the environment's `pythonw.exe`; keep the repository and virtual environment at their installed paths. Packaged startup uses the installed executable.
 
-Normal foreground launches begin muted; a configured sign-in background launch attempts listening. TTS uses installed system voices, with adjustable rate. A Punjabi-accented male voice is not guaranteed by Windows defaults. There is no voice cloning. Listening is suppressed during speech to prevent self-triggering. **Spoken barge-in and lip sync are not implemented.** Use Stop speech / cancel task to interrupt speech. TTS runs in an isolated spawned process so a blocked audio driver can be terminated without stopping the assistant. Each utterance starts a fresh worker, adding startup latency; no low-latency claim has been measured on Windows. Speech is capped at 120 seconds per utterance. Output failure is shown separately from microphone status.
+Normal foreground launches begin muted; a configured sign-in background launch attempts listening. TTS uses installed voices, with adjustable rate and a Settings voice chooser. Automatic selection prefers installed Punjabi/Indian male voice metadata, then keeps the system default. Accent, depth and naturalness depend on the installed voice. Windows SAPI viseme events drive live mouth shapes when supplied by the voice; other backends use explicitly approximate word-event motion. Audible Windows synchronization still needs hardware testing. Listening is suppressed during speech to prevent self-triggering; spoken barge-in remains unimplemented. Use **Stop** to interrupt speech and request task cancellation. TTS runs in an isolated spawned process so a blocked audio driver can be terminated. Each utterance starts a fresh worker, adding startup latency; no low-latency claim has been measured on Windows. Speech is capped at 120 seconds per utterance. Output failure is shown separately from microphone status in **Show session**.
 
 The app cannot listen during shutdown, hibernation or sleep. Locked-session microphone availability depends on Windows policy, device and session; untested here. Optional power behavior: with your consent, use Windows Settings → System → Power to set plugged-in screen timeout separately from sleep, allowing screen-off while awake. SIDHU never changes power or security policies itself.
 
@@ -62,7 +67,7 @@ python3 -m venv .venv
 SIDHU_DATA_DIR=/workspace/scratch/sidhu-data .venv/bin/python -m sidhu.app --command diagnostics
 ```
 
-See [capability and acceptance status](documentation/ACCEPTANCE.md). The full requested realistic character and phoneme lip sync, browser form/click automation, continuous/window-specific screen understanding, software-development tools, advanced workflow scheduling, productivity integrations and advanced background-service capabilities remain future work. They are not represented by simulated results.
+See [capability and acceptance status](documentation/ACCEPTANCE.md). A production realistic rig with full facial performance, browser form/click automation, continuous/window-specific screen understanding, software-development tools, advanced workflow scheduling, productivity integrations and advanced background-service capabilities remain future work. The implemented SAPI mouth-shape events do not supply a photorealistic facial rig.
 
 The `SIDHU_DATA_DIR` override above is for this cloud workspace; on a normal Linux machine you can omit it to use `$XDG_DATA_HOME/SidhuAI` (or `~/.local/share/SidhuAI`). It can also override the data location on Windows. The original full specification is preserved in [MASTER_SPEC.md](documentation/MASTER_SPEC.md).
 
@@ -116,13 +121,13 @@ Enable explicit note memory in Settings, save a note with `remember <text>`, the
 
 ## Original 3D character
 
-Settings → **Enable original procedural 3D avatar**, then restart the desktop app. Keep **Reduce animations** off to use 3D. The native Qt Quick 3D scene builds an original stylized Punjabi male bust from procedural geometry: layered turban, beard, eyes, clothing and lighting. It is a geometric starting character, not a realistic sculpt or an artist likeness. No downloaded/licensed character asset is represented as bundled.
+Settings → **Enable original procedural 3D avatar**, then restart the desktop app. Fresh installs enable this setting; existing settings are respected. Keep **Reduce animations** off to use native 3D. The articulated Qt Quick 3D character has a black layered turban, beard, eyes, jacket, cyan trim, headphones and hands. It uses original procedural geometry and remains stylized. The software renderer uses separate original generated portrait artwork with live QPainter overlays; it is labelled **ANIMATED 2D**.
 
-Actual voice/task lifecycle state is bound into the scene. Idle head movement and blinking run only while the scene is visible. Mouth pulses respond to word-start events from the active system TTS driver; drivers that do not produce word callbacks will not animate the mouth. This is word-driven mouth movement, **not phoneme/viseme lip sync**. There is no microphone-reactive face tracking. Speech cancellation clears the speaking state and closes the mouth. No voice or likeness of Sidhu Moose Wala is provided.
+Actual voice/task lifecycle state drives idle breathing, blinking, head pose, thinking/listening expressions and speaking gestures. Windows SAPI's actual 22 viseme IDs select mouth poses, with a word-boundary fallback if the voice supplies no visemes. Speech cancellation closes the mouth and invalidates queued animation events. There is no neural audio-to-face model, face tracking or voice cloning. No Sidhu Moose Wala voice or likeness asset is supplied.
 
-3D requires a supported Qt RHI graphics backend and suitable GPU/driver. The app defaults to the lightweight animated core; enabling 3D is optional. Software-only Qt backends fall back to the core with a visible explanation. QML/scene-graph errors also select the fallback when Qt can report them. Incompatible drivers that crash Qt itself cannot be recovered inside the process: restart with `avatar_enabled` set to `false` in the local settings file. Rendering quality, appearance and resource usage must be verified on the Acer; no GPU benchmark or 60 FPS claim has been made.
+3D requires a supported Qt RHI graphics backend and GPU/driver. Software-only/offscreen platforms and reported scene errors select the animated portrait. Visibility and reduced-motion controls stop decorative animation; scene transforms update at approximately 30 Hz. Incompatible drivers that crash Qt itself cannot be recovered inside the process: restart with `avatar_enabled` set to `false` in the local settings file. Rendering quality, resource usage and audible SAPI synchronization must be checked on the Acer; no GPU benchmark or 60 FPS claim has been made.
 
-Cloud validation instantiated the actual QML scene and checked its state bindings. A rendering attempt confirmed this host only offers the software scene graph, which cannot display Qt Quick 3D. The fallback was added and tested. The character's GPU-rendered appearance and audible word synchronization remain unverified.
+Cloud validation instantiates the actual QML scene and checks state/viseme bindings. The running application preview uses the software portrait because the host has no compatible interactive GPU display. The preview demonstrates real Qt widgets and the original artwork, while native GPU appearance and audible Windows synchronization remain unverified.
 
 ## Local tasks and reminders
 

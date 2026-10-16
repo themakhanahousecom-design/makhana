@@ -3,16 +3,27 @@
 Executed on the Linux cloud host using Python 3.12.14, not the user's Acer Windows laptop.
 
 - Installed the editable project with desktop and development extras in `.venv`; repeated installation successfully.
-- `python -m pytest -q`: **352 passed**, no skips on this host. Includes the headless Qt dashboard test executing a real diagnostic command and checking the displayed result.
+- `python -m pytest -q`: **376 passed**, no skips on this host. Includes the headless Qt dashboard test executing a real diagnostic command and checking the displayed result, redesigned control integration, speech-event and character animation checks.
 - `python -m pip check`: no broken requirements.
 - CLI `diagnostics`: exit 0, returned actual CPU, RAM and disk measurements from this cloud machine. These are not laptop specifications.
 - The offscreen Qt platform emitted expected tray/platform/font-cache warnings; the actual dashboard command test passed. Offscreen execution does not prove Windows tray availability.
 - The initial CLI run encountered a read-only home directory. Added and tested the `SIDHU_DATA_DIR` override and documented the workspace path.
 - Tested fixed-command permissions, multilingual typed app intents, sensitive/unknown request refusals, negation handling, file-search containment including symlink escape rejection, cooperative search cancellation, memory opt-in/persistence/deletion, settings roundtrip, AI client success/failure using mocked HTTP transport, wake-gate expiry/follow-ups, missing-model reporting and UI result delivery.
 - No live AI provider, microphone capture, acoustic wake-word detection, speech output, Windows app dispatch, Windows volume change, Windows sign-in startup, installer build or installation was executed. These remain pending, as recorded in ACCEPTANCE.md.
-- Source has been committed and pushed to `main` at https://github.com/themakhanahousecom-design/makhana. The remote branch was checked against the local commit after publication.
+- The initial implementation was committed and pushed to `main` at https://github.com/themakhanahousecom-design/makhana. The cinematic redesign is committed in the existing checkout; publication of this newer revision is separate.
 
-Tests with fake tools validate routing and refusal behavior, not Windows execution. Mocked network tests validate request handling, not provider availability. On Windows without symlink privileges, the separate symlink test skips; all other tests remain required. Without the desktop extra, only the Qt smoke test skips. Those skips must not be reported as platform acceptance.
+Tests with fake tools validate routing and refusal behavior, not Windows execution. Mocked network tests validate request handling, not provider availability. On Windows without symlink privileges, the separate symlink test skips; all other tests remain required. Without the desktop extra, Qt UI/rendering tests skip. Those skips must not be reported as platform acceptance.
+
+## Cinematic interface redesign
+
+- Replaced the basic dashboard with the actual PySide6 workstation UI. Captured [1512×960](previews/cinematic-desktop.png) and [1366×728](previews/compact-desktop.png) windows from running code. The cloud host uses the explicitly labelled animated 2D portrait; these are application previews, not generated mock screenshots or evidence of native GPU rendering.
+- Control integration tests dispatch through the real engine with controlled Windows tools: allowlisted launch, permission denial, URL encoding, real opt-in SQLite note persistence, actual clock output, unsupported shutdown refusal, session visibility and compact layout. Existing diagnostic, memory, productivity, workflow, activity and screen-consent tests pass.
+- Actual QML component tests check listening/speaking state, native viseme aperture/width selection and mouth closure on cancellation. These exposed and fixed a derived-binding ordering bug when leaving speaking state. Painter tests check actual portrait drawing, live mouth poses, ignored inactive events, visibility and reduced-motion timers.
+- SAPI tests use COM doubles to verify event interests, plain-text output, UTF-16 word offsets and cleanup. Spawned worker tests verify token stability, stale/cancelled event rejection and bounded voice inventory discovery, including terminating a deliberately blocked worker. They do not produce audible speech.
+- Microphone tests use controlled PCM/device input to verify real RMS levels and pre-wake transcript suppression. The displayed waveform remains flat without fresh input and clears on speech/mute. No physical microphone or Vosk acoustic recognition was exercised.
+- Built a real Python wheel and checked inclusion of the QML, both original image assets and the new rendering/speech modules. Windows PyInstaller, Inno Setup, native SAPI audio, startup, native 3D appearance and Acer RAM/GPU/CPU use remain unverified. No licensed likeness or natural Punjabi male voice was supplied.
+
+The latest full suite passed in approximately 23 seconds on this cloud host. This duration is not an Acer latency or performance measurement. `pip check` reports no broken requirements. Windows packaging instructions and a packaged no-audio desktop smoke check were updated; a successful Windows CI build has not been verified.
 
 ## Voice lifecycle continuation
 

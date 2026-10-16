@@ -164,6 +164,10 @@ class Engine:
             return Result(True, self.inspector.inspect(url, self.cancelled).format(), "Browser")
         if lowered in {"help", "commands"}:
             return Result(True, "Commands: open Chrome/Edge/Explorer/Notepad; open https://example.com; diagnostics; battery; volume 50; latest PDF; find report; remember <note>; memories; ask <question>; inspect https://example.com; workflows; run workflow <name>; read <path>; search text <query>; recent files; duplicates; task add <text>; tasks; task done/reopen <id>; remind in <N> minutes <text>; reminders; cancel reminder <id>; hardware; processes; history; ai models; new conversation; document <path>; summarize file <path>; analyze csv <path>; supervisor status; windows; window minimize/maximize/restore/switch <exact title>; capture screen (desktop approval required).", "Planner")
+        if lowered in {"time", "what time is it", "tell me the time"}:
+            from datetime import datetime
+            now = datetime.now().astimezone()
+            return Result(True, now.strftime("It is %I:%M %p on %A, %d %B %Y (%Z)."), "Clock")
         if lowered.startswith("remember "):
             if not self.settings.memory_enabled:
                 return Result(False, "Memory is disabled. Enable it in settings before saving a note.", "Memory")
