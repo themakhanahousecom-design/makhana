@@ -1,0 +1,41 @@
+name: Windows MVP build
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Test and build windowed application
+        shell: powershell
+        run: ./installer/build.ps1
+      - name: Smoke-test packaged CLI without audio
+        shell: powershell
+        run: |
+          $env:SIDHU_DATA_DIR = Join-Path $env:RUNNER_TEMP 'sidhu-packaged-smoke'
+          $process = Start-Process -FilePath '.\dist\SidhuAI\SidhuAI.exe' -ArgumentList '--command','diagnostics' -PassThru
+          if (-not $process.WaitForExit(30000)) { $process.Kill(); throw 'Packaged diagnostics timed out' }
+          if ($process.ExitCode -ne 0) { throw 'Packaged diagnostics failed' }
+      - name: Build per-user installer
+        shell: powershell
+        run: |
+          $compiler = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $compiler)) { throw 'Inno Setup 6 not available on runner' }
+          & $compiler installer\sidhu.iss
+          if ($LASTEXITCODE -ne 0) { throw 'Installer build failed' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SidhuAI-Windows-unsigned
+          path: |
+            dist/SidhuAI/
+            dist/installer/*.exe
+          if-no-files-found: error
