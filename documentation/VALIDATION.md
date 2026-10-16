@@ -10,7 +10,7 @@ Executed on the Linux cloud host using Python 3.12.14, not the user's Acer Windo
 - The initial CLI run encountered a read-only home directory. Added and tested the `SIDHU_DATA_DIR` override and documented the workspace path.
 - Tested fixed-command permissions, multilingual typed app intents, sensitive/unknown request refusals, negation handling, file-search containment including symlink escape rejection, cooperative search cancellation, memory opt-in/persistence/deletion, settings roundtrip, AI client success/failure using mocked HTTP transport, wake-gate expiry/follow-ups, missing-model reporting and UI result delivery.
 - No live AI provider, microphone capture, acoustic wake-word detection, speech output, Windows app dispatch, Windows volume change, Windows sign-in startup, installer build or installation was executed. These remain pending, as recorded in ACCEPTANCE.md.
-- No Git commit or push was made. Source files are available in the checkout for review.
+- Source has been committed and pushed to `main` at https://github.com/themakhanahousecom-design/makhana. The remote branch was checked against the local commit after publication.
 
 Tests with fake tools validate routing and refusal behavior, not Windows execution. Mocked network tests validate request handling, not provider availability. On Windows without symlink privileges, the separate symlink test skips; all other tests remain required. Without the desktop extra, only the Qt smoke test skips. Those skips must not be reported as platform acceptance.
 
@@ -18,7 +18,7 @@ Tests with fake tools validate routing and refusal behavior, not Windows executi
 
 Additional regression checks cover termination of a deliberately blocked spawned speech worker, queue clearing, successful subsequent output, driver error reporting, disabled speech, simulated capture closure before mute acknowledgment, bounded device-recovery attempts, and recognized-text wake-gate-to-command routing. The latter uses a fake audio device and recognizer; it does not establish real acoustic recognition. Qt smoke testing continues to run a real diagnostic command. Speech workers in tests send lifecycle results without producing sound.
 
-The new Windows CI workflow has not executed. The test count above refers to local Linux execution, including simulated voice components; no Windows acceptance or audible output is claimed.
+The Windows CI outcome has not been verified from this session. The test count above refers to local Linux execution, including simulated voice components; no Windows acceptance or audible output is claimed.
 
 ## Browser and workflow continuation
 

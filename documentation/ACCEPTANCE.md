@@ -62,7 +62,7 @@ This is an MVP, not completion of the master development specification. Status *
 
 Next phases require real Windows integration testing, a dedicated trained/verified wake detector, stronger multilingual recognition, spoken barge-in, asset licensing and a compatible 3D/lip-sync pipeline, then browser form/click workflows, screen tools, scheduling and a bounded planner. No fake agent activity, fabricated tool outcomes, embedded credentials or licensed assets are included.
 
-The core visual now labels actual muted/loading/listening/recovering/error/processing/speaking state. That core is a fallback rather than the optional procedural 3D character. Microphone, speech and task status are separate so finishing a command does not erase an audio error. Windows build automation is provided in `.github/workflows/windows.yml` but has not run.
+The core visual now labels actual muted/loading/listening/recovering/error/processing/speaking state. That core is a fallback rather than the optional procedural 3D character. Microphone, speech and task status are separate so finishing a command does not erase an audio error. Windows build automation is committed in `.github/workflows/windows.yml`; its CI outcome has not been verified.
 
 ## Browser and workflow continuation
 

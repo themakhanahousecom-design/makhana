@@ -68,7 +68,7 @@ The `SIDHU_DATA_DIR` override above is for this cloud workspace; on a normal Lin
 
 ## Windows build automation
 
-`.github/workflows/windows.yml` runs the tests, builds the windowed application, compiles the Inno Setup installer and uploads unsigned artifacts on pull requests, pushes to main or manual dispatch. The workflow is provided as source only: it has not been pushed or run from this cloud session. A successful CI build would still not validate microphone hardware, acoustic accuracy, sign-in behavior or install/uninstall on the Acer.
+`.github/workflows/windows.yml` runs the tests, builds the windowed application, compiles the Inno Setup installer and uploads unsigned artifacts on pull requests, pushes to main or manual dispatch. The workflow is committed on `main`; no successful Windows CI run has been verified here. A successful CI build would still not validate microphone hardware, acoustic accuracy, sign-in behavior or install/uninstall on the Acer.
 
 ## Browser inspection
 
@@ -212,7 +212,7 @@ Only a unique exact match is accepted. Native title/PID/visibility checks guard 
 
 These commands are not currently accepted as saved-workflow steps. Window titles appear only in the live command/result display, not persisted activity arguments. The command console now inserts output as plain text, so HTML-like window titles and tool content do not become formatted dashboard content. Native Windows execution is unverified here: tests cover the wrapper and semantic outcomes using simulated APIs. The cloud host can only report Windows-session requirements.
 
-The Windows CI source now includes a packaged `--command diagnostics` smoke check before installer compilation. The workflow has not run in this session; no Windows binary or installed application is claimed as verified.
+The Windows CI source now includes a packaged `--command diagnostics` smoke check before installer compilation. Windows CI results have not been verified in this session; no Windows binary or installed application is claimed as verified.
 
 ## One-shot screen preview and optional image analysis
 
